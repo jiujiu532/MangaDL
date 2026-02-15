@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MangaDL — 漫画下载器</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <!-- NAV -->
+    <nav class="topnav">
+        <div class="nav-brand">
+            <span class="brand-icon">M</span>
+            <span>MangaDL</span>
+        </div>
+        <div class="nav-links">
+            <button class="nav-btn active" data-page="search">搜索</button>
+            <button class="nav-btn" data-page="popular">热门</button>
+            <button class="nav-btn" data-page="latest">新作</button>
+            <button class="nav-btn" data-page="favorites">收藏<span class="nav-badge" id="favBadge"
+                    style="display:none">0</span></button>
+            <button class="nav-btn" data-page="downloads">下载</button>
+            <button class="nav-btn" data-page="settings">设置</button>
+        </div>
+        <div class="nav-right"><span id="navStats">-</span></div>
+    </nav>
+
+    <div class="wrap">
+
+        <!-- SEARCH -->
+        <section class="page active" id="page-search">
+            <div class="search-bar">
+                <input type="text" id="searchInput" class="input" placeholder="搜索漫画..." autocomplete="off">
+                <div class="dropdown" id="sourceFilterDropdown" style="flex:none">
+                    <button type="button" class="dropdown-trigger" data-value="">全部来源</button>
+                    <div class="dropdown-menu"></div>
+                </div>
+                <button class="btn btn-primary" id="searchBtn">搜索</button>
+            </div>
+            <div class="search-history" id="searchHistory"></div>
+            <div id="searchLoading" class="loading" style="display:none">
+                <div class="spinner"></div><span>搜索中...</span>
+            </div>
+            <div class="results-grid" id="searchResults">
+                <div class="empty">
+                    <div class="empty-icon">🔍</div>
+                    <p>搜索你想下载的漫画</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- POPULAR -->
+        <section class="page" id="page-popular">
+            <div class="page-header">
+                <h2>🔥 热门漫画</h2>
+                <div class="dropdown" id="popularSourceFilterDropdown">
+                    <button type="button" class="dropdown-trigger" data-value="">全部来源</button>
+                    <div class="dropdown-menu"></div>
+                </div>
+            </div>
+            <div id="popularLoading" class="loading" style="display:none">
+                <div class="spinner"></div><span>加载中...</span>
+            </div>
+            <div class="results-grid" id="popularGrid">
+                <div class="empty">
+                    <div class="empty-icon">🔥</div>
+                    <p>点击上方来源或加载热门漫画</p>
+                </div>
+            </div>
+            <div class="pagination" id="popularPager"></div>
+        </section>
+
+        <!-- LATEST -->
+        <section class="page" id="page-latest">
+            <div class="page-header">
+                <h2>✨ 最新漫画</h2>
+                <div class="dropdown" id="latestSourceFilterDropdown">
+                    <button type="button" class="dropdown-trigger" data-value="">全部来源</button>
+                    <div class="dropdown-menu"></div>
+                </div>
+            </div>
+            <div id="latestLoading" class="loading" style="display:none">
+                <div class="spinner"></div><span>加载中...</span>
+            </div>
+            <div class="results-grid" id="latestGrid">
+                <div class="empty">
+                    <div class="empty-icon">✨</div>
+                    <p>点击上方来源或加载最新漫画</p>
+                </div>
+            </div>
+            <div class="pagination" id="latestPager"></div>
+        </section>
+
+        <!-- DETAIL -->
+        <section class="page" id="page-detail">
+            <div style="margin-bottom:14px">
+                <button class="btn btn-outline btn-sm" id="backBtn">← 返回搜索</button>
+            </div>
+            <div class="detail-header card" style="position:relative">
+                <img id="detailCover" class="detail-cover" src="" alt="">
+                <div class="detail-body">
+                    <h1 id="detailTitle" class="detail-title">-</h1>
+                    <p id="detailMeta" class="detail-meta">-</p>
+                    <div class="detail-actions">
+                        <button class="btn btn-outline" id="favBtn">+ 收藏</button>
+                        <button class="btn btn-primary" id="downloadSelectedBtn">下载选中</button>
+                        <button class="btn btn-reader" id="readFirstBtn">📖 在线阅读</button>
+                    </div>
+                </div>
+                <!-- 右下角源链接 -->
+                <a class="detail-source-link" id="viewSourceBtn" href="#" target="_blank" rel="noopener"
+                    style="display:none">🔗 源站 ↗</a>
+                <!-- 悬浮球 -->
+                <button class="source-fab" id="sourceFab" style="display:none" title="来源对比">
+                    <span class="source-fab-icon">📡</span>
+                    <span class="source-fab-badge" id="sourceFabBadge">0</span>
+                </button>
+                <!-- 弹出面板 -->
+                <div class="source-popover" id="sourcePanel" style="display:none">
+                    <div class="source-popover-header">
+                        <h3>📡 来源对比</h3>
+                        <span class="source-panel-status" id="sourcePanelStatus">检测中...</span>
+                    </div>
+                    <div id="sourceList"></div>
+                </div>
+            </div>
+            <div class="chapter-toolbar card">
+                <div class="toolbar-group">
+                    <span class="toolbar-label" id="chapterCount">0 章节</span>
+                    <span class="toolbar-sep"></span>
+                    <button class="pill active" id="filterAll">全部</button>
+                    <button class="pill" id="filterTranslated">翻译</button>
+                    <button class="pill" id="filterRaw">生肉</button>
+                </div>
+                <div class="toolbar-group">
+                    <button class="pill" id="sortToggle">排序 ↑</button>
+                    <span class="toolbar-sep"></span>
+                    <button class="pill" id="selectAll">全选</button>
+                    <button class="pill" id="deselectAll">取消</button>
+                    <button class="pill" id="invertSelect">反选</button>
+                    <button class="pill" id="rangeSelect">范围</button>
+                </div>
+            </div>
+            <div class="chapters-grid" id="chaptersGrid"></div>
+            <div id="detailLoading" class="loading" style="display:none">
+                <div class="spinner"></div><span>加载中...</span>
+            </div>
+        </section>
+
+        <!-- FAVORITES -->
+        <section class="page" id="page-favorites">
+            <div class="page-header">
+                <h2>我的收藏</h2>
+                <select id="favGroup" class="pill-select">
+                    <option value="All">全部</option>
+                </select>
+            </div>
+            <!-- 追更工具栏 -->
+            <div class="update-toolbar card" id="updateToolbar">
+                <div class="update-toolbar-left">
+                    <span class="update-ver-label">版本:</span>
+                    <button class="pill update-ver-btn" id="verRawBtn">Raw版</button>
+                    <button class="pill update-ver-btn" id="verTransBtn">翻译版</button>
+                    <span class="toolbar-sep"></span>
+                    <label class="update-check-all">
+                        <input type="checkbox" id="favCheckAll"> 全选
+                    </label>
+                </div>
+                <div class="update-toolbar-right">
+                    <button class="btn btn-danger btn-sm" id="unfavSelectedBtn" disabled>取消收藏 (0)</button>
+                    <button class="btn btn-primary btn-sm" id="updateSelectedBtn" disabled>追更选中 (0)</button>
+                    <button class="btn btn-outline btn-sm" id="updateAllBtn" disabled>追更全部</button>
+                </div>
+            </div>
+            <div class="results-grid" id="favGrid">
+                <div class="empty">
+                    <div class="empty-icon">❤</div>
+                    <p>暂无收藏</p>
+                </div>
+            </div>
+            <!-- 追更时间线 -->
+            <div id="updateTimeline" class="update-timeline" style="display:none">
+                <h3>📅 追更记录</h3>
+                <div id="updateTimelineList"></div>
+            </div>
+        </section>
+
+        <!-- 追更结果弹窗 -->
+        <div class="modal-overlay" id="updateModal" style="display:none">
+            <div class="modal-content card">
+                <h3 id="updateModalTitle">📊 追更检测完成</h3>
+                <div id="updateModalBody" class="update-modal-body"></div>
+                <div id="updateModalSummary" class="update-modal-summary"></div>
+                <div class="update-modal-actions">
+                    <button class="btn btn-primary" id="updateModalConfirm">开始下载</button>
+                    <button class="btn btn-outline" id="updateModalCancel">取消</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- DOWNLOADS -->
+        <section class="page" id="page-downloads">
+            <div class="page-header">
+                <h2>下载管理</h2>
+                <button class="btn btn-danger btn-sm" id="cancelAllBtn">取消全部</button>
+            </div>
+            <div class="dl-list card">
+                <div class="dl-list-inner" id="dlTaskList">
+                    <div class="empty">
+                        <div class="empty-icon">📥</div>
+                        <p>暂无下载任务</p>
+                    </div>
+                </div>
+            </div>
+            <div class="dl-log card" id="dlLog"></div>
+            <div class="dl-history card" id="downloadHistory" style="display:none">
+                <div class="dl-history-header">
+                    <h3>📋 下载历史</h3>
+                    <button class="btn btn-outline btn-sm" id="clearHistoryBtn">清空历史</button>
+                </div>
+                <div class="dl-history-list" id="dlHistoryList"></div>
+            </div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section class="page" id="page-settings">
+            <div class="page-header">
+                <h2>设置</h2>
+            </div>
+            <div class="settings-grid">
+                <!-- Download Dir -->
+                <div class="s-card card">
+                    <h3>下载目录</h3>
+                    <div class="s-group">
+                        <label>保存路径</label>
+                        <input type="text" id="cfgDir" class="input" placeholder="漫画保存位置">
+                    </div>
+                </div>
+                <!-- Concurrency -->
+                <div class="s-card card">
+                    <h3>并发设置</h3>
+                    <div class="s-group">
+                        <label>章节并发数 (1-100)</label>
+                        <input type="number" id="cfgChConc" min="1" max="100" class="input">
+                    </div>
+                    <div class="s-group">
+                        <label>图片并发数 (1-500)</label>
+                        <input type="number" id="cfgImgConc" min="1" max="500" class="input">
+                    </div>
+                </div>
+                <!-- Proxy -->
+                <div class="s-card card">
+                    <h3>代理设置</h3>
+                    <div class="s-group">
+                        <label>代理模式</label>
+                        <select id="cfgProxyMode" class="input">
+                            <option value="none">无代理</option>
+                            <option value="http">HTTP 代理</option>
+                            <option value="socks5">SOCKS5 代理</option>
+                        </select>
+                    </div>
+                    <div class="s-group">
+                        <label>地址与端口</label>
+                        <div class="s-row">
+                            <input type="text" id="cfgProxyHost" placeholder="127.0.0.1" class="input">
+                            <input type="text" id="cfgProxyPort" placeholder="7890" class="input"
+                                style="width:100px;flex:none">
+                        </div>
+                    </div>
+                </div>
+                <!-- Theme -->
+                <div class="s-card card">
+                    <h3>主题外观</h3>
+                    <div class="s-group">
+                        <label>选择主题</label>
+                        <div class="theme-btns">
+                            <button class="theme-btn" id="themeLight">☀ 浅色</button>
+                            <button class="theme-btn active" id="themeDark">🌙 深色</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Source Health -->
+                <div class="s-card card">
+                    <h3 style="display:flex;justify-content:space-between;align-items:center">源状态 <button
+                            class="btn btn-outline btn-sm" id="refreshHealthBtn">刷新</button></h3>
+                    <div id="healthList" class="health-list">
+                        <div class="empty">
+                            <p>点击刷新检测</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-primary" id="saveConfig" style="margin-bottom:20px">保存设置</button>
+        </section>
+    </div>
+
+    <!-- Reader Overlay -->
+    <div id="readerOverlay" class="reader-overlay" style="display:none">
+        <div class="reader-topbar">
+            <button class="reader-nav-btn" id="readerPrev" title="上一章 (←)">◀</button>
+            <select class="reader-ch-select" id="readerChSelect"></select>
+            <button class="reader-nav-btn" id="readerNext" title="下一章 (→)">▶</button>
+            <span class="reader-page-indicator" id="readerPageIndicator"></span>
+            <button class="reader-close" id="readerClose" title="关闭 (Esc)">✕</button>
+        </div>
+        <div class="reader-images" id="readerImages">
+            <div class="reader-loading" id="readerLoading">加载中...</div>
+        </div>
+        <div class="reader-progress" id="readerProgress"></div>
+        <button class="reader-scroll-top" id="readerScrollTop" title="回到顶部 (Home)">↑</button>
+        <button class="reader-scroll-bottom" id="readerScrollBottom" title="到底部 (End)">↓</button>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
