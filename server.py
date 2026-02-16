@@ -2,9 +2,9 @@
 漫画下载器 Web Server — Flask 后端
 复用现有 sources/config/favorites/download_manager 模块
 """
-import os, sys, re, json, time, threading, difflib, hashlib
+import os, sys, re, json, time, threading, difflib, hashlib, zipfile, struct
 from functools import lru_cache
-from flask import Flask, render_template, jsonify, request, Response, send_file
+from flask import Flask, render_template, jsonify, request, Response, send_file, stream_with_context
 from io import BytesIO
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -655,7 +655,7 @@ def api_chapter_images():
         if images:
             def _prefetch_chapter_images(img_urls):
                 from concurrent.futures import ThreadPoolExecutor
-                with ThreadPoolExecutor(max_workers=8) as pool:
+                with ThreadPoolExecutor(max_workers=32) as pool:
                     pool.map(_download_cover_to_cache, img_urls)
             threading.Thread(target=_prefetch_chapter_images, args=(images,), daemon=True).start()
         return jsonify({"images": images, "source": source.name})
@@ -746,6 +746,140 @@ def api_cancel_all():
     dl_manager.stop_all()
     return jsonify({"ok": True})
 
+# ─── API: Browser Download (Streaming ZIP) ───
+@app.route("/api/download/zip", methods=["POST"])
+def api_download_zip():
+    """流式打包下载 — 边下载图片边写入ZIP流式返回给浏览器，零磁盘占用"""
+    data = request.json
+    chapters = data.get("chapters", [])
+    manga_title = data.get("title", "Unknown")
+    src_name = data.get("source", "")
+    manga_url = data.get("manga_url", "")
+
+    if not chapters:
+        return jsonify({"error": "no chapters"}), 400
+
+    source = sources[0]
+    for s in sources:
+        if s.name == src_name:
+            source = s
+            break
+
+    # 清洗文件名
+    safe_title = re.sub(r'[\\/:*?"<>|]', '_', manga_title).strip()
+
+    def generate():
+        """Generator: 逐章下载图片 → 写入内存ZIP → yield 增量字节"""
+        buf = BytesIO()
+        zf = zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED)
+        written = 0  # 已yield的字节位置
+
+        for ch_idx, ch in enumerate(chapters):
+            ch_url = ch.get("url", "")
+            ch_title = ch.get("title", f"Chapter_{ch_idx+1}")
+            ch_num = extract_chapter_number(ch_title)
+            is_raw = "raw" in ch_title.lower()
+            safe_ch = format_chapter_dir(ch_num, is_raw)
+
+            # 获取图片URL列表
+            try:
+                images = source.get_chapter_images(ch_url)
+            except Exception:
+                images = []
+
+            if not images:
+                continue
+
+            # 并行下载当前章节所有图片
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            img_data = {}  # idx -> bytes
+
+            def _dl(idx_url):
+                idx, url = idx_url
+                for attempt in range(3):
+                    data = source.download_image(url, timeout=15)
+                    if data:
+                        return idx, data
+                    time.sleep(0.5 * (attempt + 1))
+                return idx, None
+
+            with ThreadPoolExecutor(max_workers=32) as pool:
+                futures = pool.map(_dl, enumerate(images))
+                for idx, raw in futures:
+                    if raw:
+                        img_data[idx] = raw
+
+            # 逐张写入ZIP
+            for i in range(len(images)):
+                if i not in img_data:
+                    continue
+                # 猜测扩展名
+                raw = img_data[i]
+                ext = '.jpg'
+                if raw[:4] == b'\x89PNG':
+                    ext = '.png'
+                elif raw[:4] == b'RIFF':
+                    ext = '.webp'
+                elif raw[:3] == b'GIF':
+                    ext = '.gif'
+                fname = f"{safe_title}/{safe_ch}/{str(i+1).zfill(3)}{ext}"
+                zf.writestr(fname, raw)
+                del img_data[i]  # 立即释放内存
+
+                # yield 新增的字节
+                buf.seek(0, 2)  # seek to end
+                new_pos = buf.tell()
+                if new_pos > written:
+                    buf.seek(written)
+                    yield buf.read(new_pos - written)
+                    written = new_pos
+
+        # 关闭ZIP (写入 central directory)
+        zf.close()
+        buf.seek(0, 2)
+        new_pos = buf.tell()
+        if new_pos > written:
+            buf.seek(written)
+            yield buf.read(new_pos - written)
+
+    # 记录下载日志
+    ch_nums = [extract_chapter_number(c.get("title", "")) for c in chapters]
+    ch_nums_float = []
+    for n in ch_nums:
+        try: ch_nums_float.append((float(n), n))
+        except: pass
+    if ch_nums_float:
+        ch_nums_float.sort()
+        from_ch, to_ch = ch_nums_float[0][1], ch_nums_float[-1][1]
+    else:
+        from_ch = to_ch = ""
+    favorites.add_download_log({
+        "manga_title": manga_title,
+        "source": src_name,
+        "from_chapter": from_ch,
+        "to_chapter": to_ch,
+        "count": len(chapters),
+        "type": "manual",
+    })
+
+    # 更新收藏的下载记录 (供追更检测使用)
+    if manga_url:
+        for c in chapters:
+            ch_num = extract_chapter_number(c.get("title", ""))
+            if ch_num:
+                favorites.update_download_history(manga_url, ch_num)
+
+    safe_filename = re.sub(r'[\\/:*?"<>|]', '_', manga_title).strip() + '.zip'
+    return Response(
+        stream_with_context(generate()),
+        mimetype='application/zip',
+        headers={
+            'Content-Disposition': f'attachment; filename*=UTF-8\'\'{__import__("urllib.parse", fromlist=["quote"]).quote(safe_filename)}',
+            'X-Accel-Buffering': 'no',
+            'Cache-Control': 'no-cache',
+        }
+    )
+
 @app.route("/api/download/logs")
 def api_logs():
     with _log_lock:
@@ -791,12 +925,13 @@ def api_batch_update():
     urls = data.get("urls", [])  # 空=全部
     prefer_raw = data.get("prefer_raw", True)
 
+    # 自动从下载日志回填缺失的 download_history
+    favorites.backfill_from_download_log()
+
     # 确定追更范围
     if urls:
         targets = [i for i in favorites.get_all()
-                    if i["url"] in urls
-                    and i.get("download_history")
-                    and i["download_history"].get("chapters")]
+                    if i["url"] in urls]
     else:
         targets = favorites.get_updatable()
 
@@ -808,7 +943,7 @@ def api_batch_update():
 
     def _check_one(item):
         """检查单部漫画的新章节"""
-        hist = item["download_history"]
+        hist = item.get("download_history") or {}
         last_ch = hist.get("last_chapter", "0")
         try:
             last_num = float(last_ch)
@@ -982,6 +1117,155 @@ def api_start_update():
     dl_manager.start()
     return jsonify({"ok": True, "count": total_chs})
 
+# ─── API: Browser Batch Update (Streaming ZIP) ───
+@app.route("/api/favorites/start-update-zip", methods=["POST"])
+def api_start_update_zip():
+    """追更结果 → 流式ZIP下载到浏览器，零磁盘占用"""
+    data = request.json or {}
+    items = data.get("items", [])  # [{title, url, source, chapters: [{title, url}]}]
+
+    if not items:
+        return jsonify({"error": "无下载项"}), 400
+
+    def generate():
+        buf = BytesIO()
+        zf = zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED)
+        written = 0
+
+        for item in items:
+            manga_title = item.get("title", "Unknown")
+            src_name = item.get("source", "")
+            chapters = item.get("chapters", [])
+            if not chapters:
+                continue
+
+            source = sources[0]
+            for s in sources:
+                if s.name == src_name:
+                    source = s
+                    break
+
+            safe_manga = re.sub(r'[\\/:*?"<>|]', '_', manga_title).strip()
+
+            for ch_idx, ch in enumerate(chapters):
+                ch_url = ch.get("url", "")
+                ch_title = ch.get("title", f"Chapter_{ch_idx+1}")
+                ch_num = extract_chapter_number(ch_title)
+                is_raw = "raw" in ch_title.lower()
+                safe_ch = format_chapter_dir(ch_num, is_raw)
+
+                try:
+                    images = source.get_chapter_images(ch_url)
+                except Exception:
+                    images = []
+                if not images:
+                    continue
+
+                from concurrent.futures import ThreadPoolExecutor
+                img_data = {}
+
+                def _dl(idx_url):
+                    idx, url = idx_url
+                    for attempt in range(3):
+                        d = source.download_image(url, timeout=15)
+                        if d:
+                            return idx, d
+                        time.sleep(0.5 * (attempt + 1))
+                    return idx, None
+
+                with ThreadPoolExecutor(max_workers=32) as pool:
+                    for idx, raw in pool.map(_dl, enumerate(images)):
+                        if raw:
+                            img_data[idx] = raw
+
+                for i in range(len(images)):
+                    if i not in img_data:
+                        continue
+                    raw = img_data[i]
+                    ext = '.jpg'
+                    if raw[:4] == b'\x89PNG':
+                        ext = '.png'
+                    elif raw[:4] == b'RIFF':
+                        ext = '.webp'
+                    elif raw[:3] == b'GIF':
+                        ext = '.gif'
+                    fname = f"{safe_manga}/{safe_ch}/{str(i+1).zfill(3)}{ext}"
+                    zf.writestr(fname, raw)
+                    del img_data[i]
+
+                    buf.seek(0, 2)
+                    new_pos = buf.tell()
+                    if new_pos > written:
+                        buf.seek(written)
+                        yield buf.read(new_pos - written)
+                        written = new_pos
+
+        zf.close()
+        buf.seek(0, 2)
+        new_pos = buf.tell()
+        if new_pos > written:
+            buf.seek(written)
+            yield buf.read(new_pos - written)
+
+    # 记录追更日志
+    chapter_details = []
+    total_chs = 0
+    for item in items:
+        chs = item.get("chapters", [])
+        if not chs:
+            continue
+        total_chs += len(chs)
+        ch_nums = [extract_chapter_number(c.get("title", "")) for c in chs]
+        ch_nums_float = []
+        for n in ch_nums:
+            try: ch_nums_float.append((float(n), n))
+            except: pass
+        if ch_nums_float:
+            ch_nums_float.sort()
+            from_ch, to_ch = ch_nums_float[0][1], ch_nums_float[-1][1]
+        else:
+            from_ch = to_ch = ""
+        chapter_details.append({"title": item.get("title", ""), "from": from_ch, "to": to_ch, "count": len(chs)})
+
+    favorites.add_update_log({
+        "manga_count": len(items),
+        "chapter_count": total_chs,
+        "titles": [i.get("title", "") for i in items],
+        "chapter_details": chapter_details,
+    })
+    for d in chapter_details:
+        favorites.add_download_log({
+            "manga_title": d["title"],
+            "source": items[0].get("source", "") if items else "",
+            "from_chapter": d["from"],
+            "to_chapter": d["to"],
+            "count": d["count"],
+            "type": "update",
+        })
+
+    # 更新收藏的下载记录 (供追更检测使用)
+    for item in items:
+        manga_url = item.get("url", "")
+        if manga_url:
+            for c in item.get("chapters", []):
+                ch_num = extract_chapter_number(c.get("title", ""))
+                if ch_num:
+                    favorites.update_download_history(manga_url, ch_num)
+
+    from datetime import datetime
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    safe_filename = f'追更_{date_str}.zip'
+    return Response(
+        stream_with_context(generate()),
+        mimetype='application/zip',
+        headers={
+            'Content-Disposition': f'attachment; filename*=UTF-8\'\''
+                                   + __import__("urllib.parse", fromlist=["quote"]).quote(safe_filename),
+            'X-Accel-Buffering': 'no',
+            'Cache-Control': 'no-cache',
+        }
+    )
+
 @app.route("/api/favorites/scan-history", methods=["POST"])
 def api_scan_history():
     """扫描下载目录, 回填历史"""
@@ -997,7 +1281,7 @@ def api_check_new():
 
     count = 0
     def _quick_check(item):
-        hist = item["download_history"]
+        hist = item.get("download_history") or {}
         try:
             last_num = float(hist.get("last_chapter", "0"))
         except:

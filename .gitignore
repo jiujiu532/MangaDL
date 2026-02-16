@@ -16,3 +16,13 @@ venv/
 *.swp
 *.swo
 *~
+
+# User data
+favorites.json
+config.json
+download_log.json
+*.manga_downloader/
+
+# OS
+Thumbs.db
+.DS_Store

@@ -2029,6 +2029,43 @@ body {
   transform: translateY(-1px);
 }
 
+.btn-browser-dl {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+}
+
+.btn-browser-dl:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-browser-dl:disabled {
+  opacity: .7;
+  cursor: wait;
+}
+
+.btn-browser-dl.downloading {
+  animation: dl-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes dl-pulse {
+
+  0%,
+  100% {
+    opacity: .7;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 .ch-read-btn {
   background: none;
   border: none;

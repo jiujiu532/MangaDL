@@ -120,9 +120,8 @@ class FavoritesManager:
         # 漫画未收藏则不记录
 
     def get_updatable(self) -> list[dict]:
-        """获取所有有下载记录的收藏"""
-        return [i for i in self._data["items"]
-                if i.get("download_history") and i["download_history"].get("chapters")]
+        """获取所有收藏 (可追更)"""
+        return list(self._data["items"])
 
     def scan_download_dir(self, download_dir: str) -> int:
         """扫描下载目录, 回填收藏夹中已下载但无记录的漫画。返回回填数量。"""
@@ -207,6 +206,43 @@ class FavoritesManager:
 
     def get_download_log(self) -> list[dict]:
         return self._data.get("download_log", [])
+
+    def backfill_from_download_log(self):
+        """从下载日志回填收藏的 download_history (修复浏览器下载未记录的情况)"""
+        logs = self._data.get("download_log", [])
+        if not logs:
+            return 0
+
+        changed = 0
+        for item in self._data["items"]:
+            if item.get("download_history") and item["download_history"].get("chapters"):
+                continue  # 已有记录，跳过
+
+            # 在下载日志中查找匹配的记录
+            best_ch = None
+            for log_entry in logs:
+                if log_entry.get("manga_title", "") == item.get("title", ""):
+                    # 使用 to_chapter 作为最新章节
+                    to_ch = log_entry.get("to_chapter", "")
+                    if to_ch:
+                        try:
+                            to_num = float(to_ch)
+                            if best_ch is None or to_num > float(best_ch):
+                                best_ch = to_ch
+                        except (ValueError, TypeError):
+                            pass
+
+            if best_ch:
+                item["download_history"] = {
+                    "last_chapter": best_ch,
+                    "chapters": [best_ch],
+                    "last_updated": time.strftime("%Y-%m-%d %H:%M"),
+                }
+                changed += 1
+
+        if changed > 0:
+            self.save()
+        return changed
 
     def clear_download_log(self):
         self._data["download_log"] = []

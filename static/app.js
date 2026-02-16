@@ -421,6 +421,72 @@ $('#downloadSelectedBtn').onclick = async () => {
     navigate('downloads');
 };
 
+// ═══ 浏览器下载 (流式ZIP) ═══
+$('#browserDownloadBtn').onclick = async () => {
+    if (!currentManga) return;
+    const sel = [];
+    $$('#chaptersGrid input:checked').forEach(cb => sel.push({ url: cb.dataset.url, title: cb.dataset.title }));
+    if (!sel.length) { alert('请先选择章节'); return; }
+
+    const btn = $('#browserDownloadBtn');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ 打包中...';
+    btn.classList.add('downloading');
+
+    try {
+        const resp = await fetch('/api/download/zip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chapters: sel,
+                title: currentManga.info.title || 'Unknown',
+                source: currentManga.source,
+                manga_url: currentManga._url || ''
+            })
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+
+        // 读取流式响应
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            const mb = (received / 1024 / 1024).toFixed(1);
+            btn.textContent = `⏳ 已接收 ${mb} MB`;
+        }
+
+        // 合并chunks → blob → 触发下载
+        const blob = new Blob(chunks, { type: 'application/zip' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (currentManga.info.title || 'manga').replace(/[\\/:*?"<>|]/g, '_') + '.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        btn.textContent = '✅ 下载完成';
+        setTimeout(() => { btn.textContent = origText; btn.classList.remove('downloading'); }, 3000);
+    } catch (e) {
+        alert('下载失败: ' + e.message);
+        btn.textContent = origText;
+        btn.classList.remove('downloading');
+    } finally {
+        btn.disabled = false;
+    }
+};
+
 async function toggleFav(m, isFav) {
     if (isFav) { await api('/api/favorites/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: m.url }) }); $('#favBtn').textContent = '+ 收藏'; }
     else { await api('/api/favorites/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: m.title, url: m.url, cover: m.cover || '', source: m._source || '' }) }); $('#favBtn').textContent = '取消收藏'; }
@@ -541,7 +607,7 @@ $('#unfavSelectedBtn').onclick = async () => {
 };
 
 async function doBatchUpdate(urls) {
-    if (_updatePreferRaw === null) return;
+    if (_updatePreferRaw === null) { alert('请先选择版本：Raw版 或 翻译版'); return; }
 
     const btn = urls.length ? $('#updateSelectedBtn') : $('#updateAllBtn');
     const origText = btn.textContent;
@@ -603,6 +669,7 @@ function showUpdateModal(data) {
         ? `共 ${hasNew} 部需更新，${totalNew} 个新章节`
         : '所有漫画均已是最新';
     $('#updateModalConfirm').style.display = hasNew > 0 ? '' : 'none';
+    $('#updateModalBrowserDl').style.display = hasNew > 0 ? '' : 'none';
     modal.style.display = 'flex';
 }
 
@@ -630,6 +697,77 @@ $('#updateModalConfirm').onclick = async () => {
         $('#updateModal').style.display = 'none';
         navigate('downloads');
     } catch (e) { alert('启动下载失败: ' + (e.message || e)); }
+};
+
+// ═══ 浏览器追更下载 (流式ZIP) ═══
+$('#updateModalBrowserDl').onclick = async () => {
+    if (!_lastUpdateResults) return;
+    const items = (_lastUpdateResults.results || [])
+        .filter(r => r.status === 'has_updates' && r.new_chapters.length > 0)
+        .map(r => ({
+            title: r.title,
+            url: r.url,
+            source: r.source,
+            chapters: r.new_chapters
+        }));
+
+    if (!items.length) return;
+
+    const btn = $('#updateModalBrowserDl');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ 打包中...';
+    btn.classList.add('downloading');
+
+    try {
+        const resp = await fetch('/api/favorites/start-update-zip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            const mb = (received / 1024 / 1024).toFixed(1);
+            btn.textContent = `⏳ 已接收 ${mb} MB`;
+        }
+
+        const blob = new Blob(chunks, { type: 'application/zip' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const today = new Date().toISOString().slice(0, 10);
+        a.download = `追更_${today}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        btn.textContent = '✅ 下载完成';
+        setTimeout(() => {
+            btn.textContent = origText;
+            btn.classList.remove('downloading');
+        }, 3000);
+        $('#updateModal').style.display = 'none';
+    } catch (e) {
+        alert('浏览器下载失败: ' + e.message);
+        btn.textContent = origText;
+        btn.classList.remove('downloading');
+    } finally {
+        btn.disabled = false;
+    }
 };
 
 // Update timeline
