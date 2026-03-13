@@ -399,6 +399,11 @@ body {
   letter-spacing: .3px;
 }
 
+.card-source {
+  align-self: flex-start;
+  margin-top: auto;
+}
+
 .badge-source {
   background: var(--accent-bg);
   color: var(--accent);
