@@ -513,8 +513,8 @@ async function loadFavorites() {
             const hist = f.download_history;
             const hasHist = hist && hist.chapters && hist.chapters.length > 0;
             const statusHtml = hasHist
-                ? `<span class="fav-dl-status has-history">已下载到 ${esc(hist.last_chapter)} 章${hist.last_version === 'raw' ? ' (Raw)' : hist.last_version === 'translated' ? ' (翻译版)' : ''}</span>`
-                : `<span class="fav-dl-status no-history">未下载过</span>`;
+                ? `<span class="fav-dl-status has-history">↓${esc(hist.last_chapter)}章</span>`
+                : `<span class="fav-dl-status no-history">未下载</span>`;
             const checked = _favChecked.has(f.url) ? 'checked' : '';
             return `<div class="manga-card result-card" data-url="${escA(f.url)}" data-source="${escA(f.source)}">
                 <input type="checkbox" class="fav-card-check" data-fav-url="${escA(f.url)}" ${checked}>
