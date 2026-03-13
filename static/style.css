@@ -2702,13 +2702,40 @@ body {
 
 @media (max-width: 480px) {
   .reader-topbar {
-    padding: 8px 10px;
-    gap: 6px;
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .reader-nav-btn {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    font-size: 12px;
+    border-radius: 6px;
   }
 
   .reader-ch-select {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
     font-size: 12px;
-    padding: 4px 6px;
+    padding: 4px 24px 4px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .reader-page-indicator {
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .reader-close {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    font-size: 14px;
+    border-radius: 6px;
   }
 
   .reader-scroll-top,
