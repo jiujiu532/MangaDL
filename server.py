@@ -1140,10 +1140,12 @@ def api_batch_update():
             title_lower = ch.get("title", "").lower()
             is_raw = "raw" in title_lower
 
-            if item_prefer_raw and not is_raw:
-                continue
-            if not item_prefer_raw and is_raw:
-                continue
+            # 自动模式: 不做 raw/翻译 过滤, 接受所有新章节
+            if prefer_raw != "auto":
+                if item_prefer_raw and not is_raw:
+                    continue
+                if not item_prefer_raw and is_raw:
+                    continue
 
             new_chs.append({
                 "title": ch["title"], "url": ch["url"],
