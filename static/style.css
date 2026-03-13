@@ -1543,8 +1543,8 @@ body {
   /* ─── Detail Page ─── */
   .detail-header {
     flex-direction: column;
-    align-items: center;
-    text-align: center;
+    align-items: flex-start;
+    text-align: left;
     padding: 16px;
     gap: 14px;
   }
@@ -1578,12 +1578,6 @@ body {
     margin-top: 10px;
     align-self: flex-end;
     margin-left: auto;
-  }
-
-  .detail-header.card {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
   }
 
   .source-popover {
@@ -2423,8 +2417,10 @@ body {
   padding: 10px 16px;
   background: rgba(0, 0, 0, .85);
   backdrop-filter: blur(10px);
-  position: sticky;
+  position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 2;
   min-height: 48px;
   transition: transform .3s ease, opacity .3s ease;
