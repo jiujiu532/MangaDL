@@ -1228,15 +1228,15 @@ async function openReader(chapterUrl, chapterTitle) {
         });
         container.appendChild(fragment);
 
-        // Setup scroll tracking
-        _setupScrollTracking(container, total);
+        // Setup scroll tracking (pass loadedCount getter so banner waits for all images)
+        _setupScrollTracking(container, total, () => loaded);
 
     } catch (e) {
         loading.textContent = 'Error: ' + (e.message || e);
     }
 }
 
-function _setupScrollTracking(container, totalImages) {
+function _setupScrollTracking(container, totalImages, getLoadedCount) {
     let _preloadTriggered = false;
     let _lastScrollTop = 0;
     let _hideTimer = null;
@@ -1266,8 +1266,9 @@ function _setupScrollTracking(container, totalImages) {
         }
         _lastScrollTop = scrollTop;
 
-        // ★ 自动翻章横幅: 滚到底部时显示
-        if (ratio > 0.97) {
+        // ★ 自动翻章横幅: 只有全部图片加载完 AND 滚到底部才显示
+        const allLoaded = getLoadedCount() >= totalImages;
+        if (allLoaded && ratio > 0.97) {
             const chapters = currentManga ? currentManga.chapters : [];
             const nextIdx = _readerChapterIdx + 1;
             if (nextIdx < chapters.length) {
