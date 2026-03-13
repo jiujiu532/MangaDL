@@ -2344,6 +2344,33 @@ body {
   color: #60a5fa;
 }
 
+/* Fav button */
+.btn-fav {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+}
+
+.btn-fav:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+/* Detail cover enhancement */
+.detail-cover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+  transition: transform .2s ease;
+}
+
+.detail-cover:hover {
+  transform: scale(1.03);
+}
+
 /* ═══ Online Reader ═══ */
 .btn-reader {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
