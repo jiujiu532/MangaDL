@@ -521,9 +521,11 @@ async function loadFavorites() {
                 <img src="${proxyUrl(f.cover)}" alt="" loading="lazy">
                 <div class="card-body">
                     <div class="card-title">${esc(f.title)}</div>
-                    <span class="badge badge-source">${esc(f.source)}</span>
+                    <div class="card-badges">
+                        <span class="badge badge-source">${esc(f.source)}</span>
+                        ${statusHtml}
+                    </div>
                 </div>
-                ${statusHtml}
             </div>`;
         }).join('');
 
