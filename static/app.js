@@ -349,7 +349,7 @@ async function openDetail(m) {
         $('#detailMeta').textContent = meta.join(' · ') || '暂无信息';
         renderChapters(d.chapters);
         const fav = await api(`/api/favorites/check?url=${encodeURIComponent(m.url)}`);
-        $('#favBtn').textContent = fav.favorited ? '💔 取消收藏' : '❤ 收藏';
+        $('#favBtn').textContent = fav.favorited ? '✕ 取消收藏' : '❤ 收藏';
         $('#favBtn').onclick = () => toggleFav(m, fav.favorited);
         // 源站跳转按钮
         const srcBtn = $('#viewSourceBtn');
@@ -489,7 +489,7 @@ $('#browserDownloadBtn').onclick = async () => {
 
 async function toggleFav(m, isFav) {
     if (isFav) { await api('/api/favorites/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: m.url }) }); $('#favBtn').textContent = '❤ 收藏'; }
-    else { await api('/api/favorites/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: m.title, url: m.url, cover: m.cover || '', source: m._source || '' }) }); $('#favBtn').textContent = '💔 取消收藏'; }
+    else { await api('/api/favorites/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: m.title, url: m.url, cover: m.cover || '', source: m._source || '' }) }); $('#favBtn').textContent = '✕ 取消收藏'; }
     loadStats();
 }
 
