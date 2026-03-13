@@ -1560,6 +1560,10 @@ body {
     gap: 14px;
   }
 
+  .detail-body {
+    width: 100%;
+  }
+
   .detail-cover {
     width: 130px;
     min-height: 180px;
