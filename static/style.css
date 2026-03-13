@@ -470,6 +470,8 @@ body {
   overflow: hidden;
   cursor: pointer;
   transition: all .25s var(--ease);
+  display: flex;
+  flex-direction: column;
 }
 
 .manga-card:hover {
@@ -486,6 +488,9 @@ body {
 
 .card-body {
   padding: 10px 12px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .card-title {
@@ -498,6 +503,7 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin-bottom: 6px;
+  min-height: 2.7em;
   color: var(--text);
 }
 
@@ -2001,10 +2007,15 @@ body {
 
 .card-badges {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: auto;
+  padding-top: 8px;
   align-items: center;
+}
+
+.card-badges .badge-source {
+  flex-shrink: 0;
 }
 
 .fav-dl-status {
@@ -2013,6 +2024,8 @@ body {
   border-radius: var(--radius-full);
   font-weight: 500;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fav-dl-status.has-history {
@@ -2022,8 +2035,9 @@ body {
 }
 
 .fav-dl-status.no-history {
-  background: #f1f5f9;
+  background: rgba(255, 255, 255, .08);
   color: var(--text3);
+  border: 1px solid var(--card-border);
 }
 
 /* Modal */
