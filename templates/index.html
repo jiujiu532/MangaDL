@@ -166,6 +166,7 @@
                 <div class="update-toolbar-left">
                     <span class="update-ver-label">版本:</span>
                     <button class="pill update-ver-btn" id="verRawBtn">Raw版</button>
+                    <button class="pill update-ver-btn" id="verAutoBtn">自动</button>
                     <button class="pill update-ver-btn" id="verTransBtn">翻译版</button>
                     <span class="toolbar-sep"></span>
                     <label class="update-check-all">
@@ -303,7 +304,7 @@
 
     <!-- Reader Overlay -->
     <div id="readerOverlay" class="reader-overlay" style="display:none">
-        <div class="reader-topbar">
+        <div class="reader-topbar" id="readerTopbar">
             <button class="reader-nav-btn" id="readerPrev" title="上一章 (←)">◀</button>
             <select class="reader-ch-select" id="readerChSelect"></select>
             <button class="reader-nav-btn" id="readerNext" title="下一章 (→)">▶</button>
@@ -314,6 +315,10 @@
             <div class="reader-loading" id="readerLoading">加载中...</div>
         </div>
         <div class="reader-progress" id="readerProgress"></div>
+        <!-- Auto chapter transition banner -->
+        <div class="reader-next-banner" id="readerNextBanner" style="display:none">
+            <span id="readerNextText">继续阅读下一章</span>
+        </div>
         <button class="reader-scroll-top" id="readerScrollTop" title="回到顶部 (Home)">↑</button>
         <button class="reader-scroll-bottom" id="readerScrollBottom" title="到底部 (End)">↓</button>
     </div>

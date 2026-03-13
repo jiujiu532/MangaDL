@@ -1407,25 +1407,109 @@ body {
   background: rgba(255, 255, 255, .1);
 }
 
-/* Responsive */
-@media(max-width:768px) {
+/* ═══════════════════════════════════════
+   RESPONSIVE — Mobile (≤768px)
+   ═══════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ─── Bottom Tab Bar ─── */
   .topnav {
-    padding: 10px 16px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    flex-wrap: wrap;
+    padding: 0;
+    z-index: 9998;
+    border-top: 1px solid var(--card-border);
+    border-bottom: none;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, .08);
+  }
+
+  .nav-brand,
+  .nav-right {
+    display: none;
   }
 
   .nav-links {
-    margin-left: 12px;
+    margin: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-around;
+    gap: 0;
+    padding: 6px 0 calc(6px + env(safe-area-inset-bottom));
   }
 
+  .nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 4px;
+    font-size: 11px;
+    border-radius: 0;
+    gap: 2px;
+  }
+
+  body {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
+  }
+
+  /* ─── Main Wrap ─── */
   .wrap {
-    padding: 16px 12px;
+    padding: 12px 10px;
   }
 
+  /* ─── Search Bar ─── */
+  .search-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .search-bar .input {
+    width: 100%;
+    flex: none;
+  }
+
+  .search-bar .dropdown {
+    flex: 1 !important;
+  }
+
+  .search-bar .btn {
+    flex: none;
+    min-width: 70px;
+  }
+
+  /* ─── Search History ─── */
+  .search-history {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* ─── Results Grid (search / popular / latest / favorites) ─── */
+  .results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  /* ─── Page Header ─── */
+  .page-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .page-header h2 {
+    font-size: 18px;
+  }
+
+  /* ─── Detail Page ─── */
   .detail-header {
     flex-direction: column;
     align-items: center;
     text-align: center;
-    padding: 20px;
+    padding: 16px;
+    gap: 14px;
   }
 
   .detail-cover {
@@ -1433,18 +1517,189 @@ body {
     min-height: 180px;
   }
 
-  .source-popover {
-    width: calc(100vw - 40px);
-    right: -10px;
+  .detail-title {
+    font-size: 18px;
   }
 
-  .results-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 10px;
+  .detail-actions {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .detail-actions .btn {
+    font-size: 12px;
+    padding: 7px 12px;
+  }
+
+  .detail-source-link {
+    position: static;
+    display: inline-block;
+    margin-top: 8px;
+  }
+
+  .source-popover {
+    width: calc(100vw - 24px);
+    right: -10px;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  .source-row {
+    grid-template-columns: 20px 80px 50px 1fr auto;
+    gap: 4px;
+    font-size: 12px;
+    padding: 5px 6px;
+  }
+
+  /* ─── Chapter Toolbar ─── */
+  .chapter-toolbar {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .toolbar-group {
+    gap: 4px;
   }
 
   .chapters-grid {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 4px;
+  }
+
+  .ch-item {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  /* ─── Favorites: Update Toolbar ─── */
+  .update-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .update-toolbar-left {
+    justify-content: flex-start;
+  }
+
+  .update-toolbar-right {
+    justify-content: flex-end;
+  }
+
+  .update-ver-btn {
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+
+  /* ─── Fav Card Checkbox ─── */
+  .fav-card-check {
+    width: 16px;
+    height: 16px;
+  }
+
+  .fav-dl-status {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  /* ─── Download List ─── */
+  .dl-item {
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+    padding: 10px 0;
+  }
+
+  .dl-name {
+    grid-column: 1 / -1;
+    font-size: 13px;
+  }
+
+  .dl-bar-wrap {
+    grid-column: 1;
+  }
+
+  .dl-speed {
+    font-size: 11px;
+  }
+
+  .dl-status {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .dl-actions button {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .dl-log {
+    font-size: 10px;
+    max-height: 100px;
+  }
+
+  /* ─── Settings ─── */
+  .settings-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .s-card {
+    padding: 16px;
+  }
+
+  /* ─── Modal ─── */
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .modal-content {
+    max-width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .update-modal-body {
+    max-height: 45vh;
+  }
+
+  .update-modal-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .update-modal-actions .btn {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  /* ─── Update Timeline ─── */
+  .timeline-details {
+    margin-left: 0;
+    margin-top: 6px;
+  }
+
+  .timeline-time {
+    min-width: 80px;
+    font-size: 11px;
+  }
+
+  /* ─── Download History ─── */
+  .dl-history-row2 {
+    padding-left: 0;
+  }
+
+  /* ─── Pagination ─── */
+  .pagination .page-btn {
+    min-width: 32px;
+    height: 32px;
+    font-size: 12px;
+    padding: 0 8px;
   }
 }
 
@@ -2105,6 +2360,50 @@ body {
   top: 0;
   z-index: 2;
   min-height: 48px;
+  transition: transform .3s ease, opacity .3s ease;
+}
+
+.reader-topbar.hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Next chapter banner */
+.reader-next-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, .95), rgba(139, 92, 246, .95));
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  animation: banner-slide-up .3s ease;
+  gap: 8px;
+}
+
+.reader-next-banner:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 1), rgba(139, 92, 246, 1));
+}
+
+@keyframes banner-slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .reader-title {

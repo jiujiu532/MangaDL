@@ -1,0 +1,32 @@
+.git
+.github
+__pycache__
+build/
+dist/
+*.spec
+*.pyc
+*.pyo
+.env
+venv/
+.venv/
+*.log
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# User data
+favorites.json
+config.json
+download_log.json
+*.manga_downloader/
+screenshot.png
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build scripts
+build_linux.sh
+启动漫画下载器.bat

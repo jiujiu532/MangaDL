@@ -96,13 +96,13 @@ class FavoritesManager:
         self.save()
 
     # --- 下载历史 ---
-    def update_download_history(self, url: str, chapter_num: str):
-        """下载完成时记录章节号"""
+    def update_download_history(self, url: str, chapter_num: str, is_raw: bool = None):
+        """下载完成时记录章节号及版本(raw/translated)"""
         for item in self._data["items"]:
             if item["url"] == url:
                 hist = item.setdefault("download_history", {
                     "last_chapter": "", "chapters": [],
-                    "last_updated": "",
+                    "last_updated": "", "last_version": "raw",
                 })
                 if chapter_num not in hist["chapters"]:
                     hist["chapters"].append(chapter_num)
@@ -114,6 +114,11 @@ class FavoritesManager:
                         hist["last_chapter"] = max(nums, key=lambda x: x[0])[1]
                 except Exception:
                     hist["last_chapter"] = chapter_num
+                # 记录最后下载的版本
+                if is_raw is not None:
+                    hist["last_version"] = "raw" if is_raw else "translated"
+                elif "last_version" not in hist:
+                    hist["last_version"] = "raw"
                 hist["last_updated"] = time.strftime("%Y-%m-%d %H:%M")
                 self.save()
                 return
@@ -172,10 +177,23 @@ class FavoritesManager:
                     last = max(nums, key=lambda x: x[0])[1]
                 except Exception:
                     last = chapters[-1]
+                # 检测版本: 最新章节文件夹是否含 _raw
+                has_raw = any("_raw" in f.lower() for f in os.listdir(manga_path)
+                             if os.path.isdir(os.path.join(manga_path, f)))
+                has_trans = any("_raw" not in f.lower() and re.search(r'第[\d.]+话', f)
+                               for f in os.listdir(manga_path)
+                               if os.path.isdir(os.path.join(manga_path, f)))
+                if has_raw and not has_trans:
+                    version = "raw"
+                elif has_trans and not has_raw:
+                    version = "translated"
+                else:
+                    version = "raw"  # 混合或无法判断时默认 raw
                 item["download_history"] = {
                     "last_chapter": last,
                     "chapters": chapters,
                     "last_updated": time.strftime("%Y-%m-%d %H:%M"),
+                    "last_version": version,
                 }
                 count += 1
 

@@ -496,7 +496,7 @@ async function toggleFav(m, isFav) {
 // ═══ FAVORITES + 一键追更 ═══
 let _favChecked = new Set();
 let _favItems = [];
-let _updatePreferRaw = null;  // null=未选, true=raw, false=翻译
+let _updatePreferRaw = null;  // null=未选, true=raw, false=翻译, "auto"=自动
 let _lastUpdateResults = null;
 
 async function loadFavorites() {
@@ -513,7 +513,7 @@ async function loadFavorites() {
             const hist = f.download_history;
             const hasHist = hist && hist.chapters && hist.chapters.length > 0;
             const statusHtml = hasHist
-                ? `<span class="fav-dl-status has-history">已下载到 ${esc(hist.last_chapter)} 章</span>`
+                ? `<span class="fav-dl-status has-history">已下载到 ${esc(hist.last_chapter)} 章${hist.last_version === 'raw' ? ' (Raw)' : hist.last_version === 'translated' ? ' (翻译版)' : ''}</span>`
                 : `<span class="fav-dl-status no-history">未下载过</span>`;
             const checked = _favChecked.has(f.url) ? 'checked' : '';
             return `<div class="manga-card result-card" data-url="${escA(f.url)}" data-source="${escA(f.source)}">
@@ -570,13 +570,22 @@ function _syncUpdateBtns() {
 $('#verRawBtn').onclick = () => {
     _updatePreferRaw = true;
     $('#verRawBtn').classList.add('active');
+    $('#verAutoBtn').classList.remove('active');
     $('#verTransBtn').classList.remove('active');
     _syncUpdateBtns();
 };
 $('#verTransBtn').onclick = () => {
     _updatePreferRaw = false;
     $('#verTransBtn').classList.add('active');
+    $('#verAutoBtn').classList.remove('active');
     $('#verRawBtn').classList.remove('active');
+    _syncUpdateBtns();
+};
+$('#verAutoBtn').onclick = () => {
+    _updatePreferRaw = 'auto';
+    $('#verAutoBtn').classList.add('active');
+    $('#verRawBtn').classList.remove('active');
+    $('#verTransBtn').classList.remove('active');
     _syncUpdateBtns();
 };
 
@@ -607,7 +616,7 @@ $('#unfavSelectedBtn').onclick = async () => {
 };
 
 async function doBatchUpdate(urls) {
-    if (_updatePreferRaw === null) { alert('请先选择版本：Raw版 或 翻译版'); return; }
+    if (_updatePreferRaw === null) { alert('请先选择版本：Raw版、自动 或 翻译版'); return; }
 
     const btn = urls.length ? $('#updateSelectedBtn') : $('#updateAllBtn');
     const origText = btn.textContent;
@@ -636,7 +645,7 @@ async function doBatchUpdate(urls) {
 
 function showUpdateModal(data) {
     const modal = $('#updateModal');
-    const verLabel = _updatePreferRaw ? 'Raw版' : '翻译版';
+    const verLabel = _updatePreferRaw === 'auto' ? '自动版本' : (_updatePreferRaw ? 'Raw版' : '翻译版');
     $('#updateModalTitle').textContent = `📊 追更检测完成 (${verLabel})`;
 
     const body = $('#updateModalBody');
@@ -1126,17 +1135,22 @@ async function openReader(chapterUrl, chapterTitle) {
     const container = $('#readerImages');
     const loading = $('#readerLoading');
     const progress = $('#readerProgress');
+    const topbar = $('#readerTopbar');
+    const nextBanner = $('#readerNextBanner');
 
     overlay.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     container.innerHTML = '';
+    container.scrollTop = 0;
     container.appendChild(loading);
     loading.style.display = 'block';
-    loading.textContent = '\u52a0\u8f7d\u4e2d...';
+    loading.textContent = '加载中...';
     progress.style.setProperty('--progress', '0%');
     $('#readerPageIndicator').textContent = '';
     $('#readerScrollTop').classList.remove('visible');
     $('#readerScrollBottom').classList.remove('visible');
+    nextBanner.style.display = 'none';
+    topbar.classList.remove('hidden');
 
     // Find index in chapters
     if (currentManga && currentManga.chapters) {
@@ -1147,7 +1161,6 @@ async function openReader(chapterUrl, chapterTitle) {
 
     // Save progress
     _saveReadProgress(chapterUrl);
-    // 保存阅读器状态以支持刷新恢复
     try { sessionStorage.setItem('lastReaderChapter', JSON.stringify({ url: chapterUrl, title: chapterTitle })); } catch (e) { }
 
     // Close picker if open
@@ -1166,81 +1179,74 @@ async function openReader(chapterUrl, chapterTitle) {
             images = data.images;
         }
         if (!images || !images.length) {
-            loading.textContent = '\u672a\u627e\u5230\u56fe\u7247';
+            loading.textContent = '未找到图片';
             return;
         }
+
+        // ★ Server prefetch: 64 threads download all images in background
+        fetch('/api/img-prefetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urls: images })
+        }).catch(() => { });
+
         loading.style.display = 'none';
         const total = images.length;
         let loaded = 0;
 
-        // Build all img elements without loading (data-src only)
+        // ★ Immediately load ALL images (no lazy loading)
         const fragment = document.createDocumentFragment();
         images.forEach((imgUrl, i) => {
             const img = document.createElement('img');
             img.alt = `Page ${i + 1}`;
-            img.dataset.src = proxyUrl(imgUrl);
+            img.decoding = 'async';
             img.style.minHeight = '300px';
             img.style.background = 'var(--card, #1a1a2e)';
+            const src = proxyUrl(imgUrl);
+            let retries = 0;
+            img.onload = () => {
+                loaded++;
+                img.style.minHeight = '';
+                img.style.background = '';
+                progress.style.setProperty('--progress', `${(loaded / total * 100).toFixed(0)}%`);
+            };
+            img.onerror = () => {
+                retries++;
+                if (retries < 3) {
+                    setTimeout(() => { img.src = src + `&_r=${retries}`; }, 600 * retries);
+                } else {
+                    loaded++;
+                    img.style.minHeight = '60px';
+                    img.style.background = '#333';
+                    progress.style.setProperty('--progress', `${(loaded / total * 100).toFixed(0)}%`);
+                }
+            };
+            img.src = src;
             fragment.appendChild(img);
         });
         container.appendChild(fragment);
 
-        // IntersectionObserver: load images only when near viewport
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const img = entry.target;
-                    if (img.dataset.src) {
-                        const origSrc = img.dataset.src;
-                        let retries = 0;
-                        const maxRetries = 3;
-                        const tryLoad = () => {
-                            img.src = origSrc + (retries > 0 ? `&_r=${retries}` : '');
-                        };
-                        delete img.dataset.src;
-                        img.onload = () => {
-                            loaded++;
-                            img.style.minHeight = '';
-                            img.style.background = '';
-                            progress.style.setProperty('--progress', `${(loaded / total * 100).toFixed(0)}%`);
-                        };
-                        img.onerror = () => {
-                            retries++;
-                            if (retries < maxRetries) {
-                                setTimeout(tryLoad, 1000 * retries);
-                            } else {
-                                loaded++;
-                                img.alt = `Page ${parseInt(img.alt.match(/\d+/)) || '?'} (\u52a0\u8f7d\u5931\u8d25)`;
-                                img.style.minHeight = '60px';
-                                img.style.background = '#333';
-                                progress.style.setProperty('--progress', `${(loaded / total * 100).toFixed(0)}%`);
-                            }
-                        };
-                        tryLoad();
-                    }
-                    observer.unobserve(img);
-                }
-            });
-        }, { root: container, rootMargin: '600px 0px' });
-
-        container.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
-
-        // Setup scroll tracking: page indicator + preload trigger
+        // Setup scroll tracking
         _setupScrollTracking(container, total);
 
     } catch (e) {
-        loading.textContent = '\u52a0\u8f7d\u5931\u8d25: ' + (e.message || e);
+        loading.textContent = 'Error: ' + (e.message || e);
     }
 }
 
 function _setupScrollTracking(container, totalImages) {
     let _preloadTriggered = false;
+    let _lastScrollTop = 0;
+    let _hideTimer = null;
+    const topbar = $('#readerTopbar');
+    const nextBanner = $('#readerNextBanner');
+
     container.onscroll = () => {
         const scrollTop = container.scrollTop;
         const scrollHeight = container.scrollHeight - container.clientHeight;
         const ratio = scrollHeight > 0 ? scrollTop / scrollHeight : 0;
 
-        // Page indicator: estimate current image by scroll position
+        // Page indicator
         const currentImg = Math.min(totalImages, Math.max(1, Math.ceil(ratio * totalImages)));
         $('#readerPageIndicator').textContent = `${currentImg}/${totalImages}`;
 
@@ -1249,10 +1255,46 @@ function _setupScrollTracking(container, totalImages) {
         $('#readerScrollTop').classList.toggle('visible', showBtns);
         $('#readerScrollBottom').classList.toggle('visible', showBtns && ratio < 0.95);
 
-        // Preload next chapter at 80%
-        if (ratio > 0.8 && !_preloadTriggered) {
+        // ★ 顶栏自动隐藏: 向下滚动隐藏, 向上滚动显示
+        const delta = scrollTop - _lastScrollTop;
+        if (delta > 30 && scrollTop > 100) {
+            topbar.classList.add('hidden');
+        } else if (delta < -15) {
+            topbar.classList.remove('hidden');
+        }
+        _lastScrollTop = scrollTop;
+
+        // ★ 自动翻章横幅: 滚到底部时显示
+        if (ratio > 0.97) {
+            const chapters = currentManga ? currentManga.chapters : [];
+            const nextIdx = _readerChapterIdx + 1;
+            if (nextIdx < chapters.length) {
+                const nextCh = chapters[nextIdx];
+                $('#readerNextText').textContent = `继续阅读: ${nextCh.title}`;
+                nextBanner.style.display = 'flex';
+                nextBanner.onclick = () => openReader(nextCh.url, nextCh.title);
+            }
+        } else {
+            nextBanner.style.display = 'none';
+        }
+
+        // Preload next chapter at 60% (earlier than before)
+        if (ratio > 0.6 && !_preloadTriggered) {
             _preloadTriggered = true;
             _preloadNextChapter();
+        }
+    };
+
+    // ★ 单击中央区域切换工具栏 (沉浸式)
+    container.onclick = (e) => {
+        // 只在中央 1/3 区域触发
+        const rect = container.getBoundingClientRect();
+        const clickY = e.clientY - rect.top;
+        const clickX = e.clientX - rect.left;
+        const yRatio = clickY / rect.height;
+        const xRatio = clickX / rect.width;
+        if (yRatio > 0.3 && yRatio < 0.7 && xRatio > 0.2 && xRatio < 0.8) {
+            topbar.classList.toggle('hidden');
         }
     };
 }

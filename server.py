@@ -46,11 +46,12 @@ def _on_task_updated(idx):
         if task.status.value == "Completed":
             from download_manager import extract_chapter_number
             ch_num = extract_chapter_number(task.chapter_title)
+            is_raw = "raw" in task.chapter_title.lower()
             # Find the manga URL from favorites that matches this manga title
             for item in favorites.get_all():
                 # Match by title (normalized)
                 if _normalize(item["title"]) == _normalize(task.manga_title):
-                    favorites.update_download_history(item["url"], ch_num)
+                    favorites.update_download_history(item["url"], ch_num, is_raw=is_raw)
                     break
     except Exception:
         pass
@@ -504,11 +505,40 @@ def api_source_health():
 # ─── Image Cache & Pre-fetch ───
 _img_cache = {}  # url -> (bytes, content_type, timestamp)
 _img_cache_lock = threading.Lock()
-_IMG_CACHE_MAX = 500
-_IMG_CACHE_TTL = 1800  # 30 min
+_img_downloading = {}  # url -> threading.Event (in-flight download dedup)
+_img_downloading_lock = threading.Lock()
+_IMG_CACHE_MAX = 2000
+_IMG_CACHE_TTL = 7200  # 2 hours
+
+# 复用的高并发 session (带连接池)
+_proxy_session = None
+_proxy_session_lock = threading.Lock()
+
+def _get_proxy_session():
+    global _proxy_session
+    if _proxy_session is None:
+        with _proxy_session_lock:
+            if _proxy_session is None:
+                import requests as req
+                from requests.adapters import HTTPAdapter
+                from urllib3.util.retry import Retry
+                s = req.Session()
+                s.headers.update({
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                })
+                adapter = HTTPAdapter(
+                    pool_connections=80,
+                    pool_maxsize=150,
+                    max_retries=Retry(total=2, backoff_factor=0.1),
+                    pool_block=False,
+                )
+                s.mount("http://", adapter)
+                s.mount("https://", adapter)
+                _proxy_session = s
+    return _proxy_session
 
 def _find_session_for_url(url):
-    """找到匹配 URL 的源 session（带正确 Referer/UA）"""
+    """找到匹配 URL 的源 session (带连接池)"""
     for s in sources:
         if s.base_url and s.base_url in url:
             return s.session
@@ -516,17 +546,11 @@ def _find_session_for_url(url):
             domain = s.base_url.split('//')[1].split('/')[0]
             if domain in url:
                 return s.session
-    # 通用 session
-    import requests as req
-    session = req.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": url.rsplit('/', 1)[0] + '/'
-    })
-    return session
+    # 通用高性能 session (复用连接池)
+    return _get_proxy_session()
 
 def _download_cover_to_cache(url):
-    """下载封面到缓存，返回 True/False"""
+    """下载图片到缓存 (带去重)"""
     if not url or url.startswith('data:'):
         return False
     now = time.time()
@@ -534,26 +558,45 @@ def _download_cover_to_cache(url):
         if url in _img_cache:
             _, _, ts = _img_cache[url]
             if now - ts < _IMG_CACHE_TTL:
-                return True  # 已在缓存中
+                return True
+
+    # 去重: 如果已有线程在下载同一 URL, 等待其完成
+    with _img_downloading_lock:
+        if url in _img_downloading:
+            evt = _img_downloading[url]
+            evt.wait(timeout=15)
+            with _img_cache_lock:
+                return url in _img_cache
+        evt = threading.Event()
+        _img_downloading[url] = evt
+
     try:
         session = _find_session_for_url(url)
-        resp = session.get(url, timeout=(5, 15))
+        referer = url.rsplit('/', 1)[0] + '/'
+        resp = session.get(url, timeout=(3, 10),
+                           headers={"Referer": referer})
         resp.raise_for_status()
         data = resp.content
         ct = resp.headers.get("Content-Type", "image/jpeg")
         with _img_cache_lock:
             if len(_img_cache) >= _IMG_CACHE_MAX:
-                oldest = min(_img_cache, key=lambda k: _img_cache[k][2])
-                del _img_cache[oldest]
+                # 批量清理最旧的 10%
+                to_evict = _IMG_CACHE_MAX // 10
+                oldest_keys = sorted(_img_cache, key=lambda k: _img_cache[k][2])[:to_evict]
+                for k in oldest_keys:
+                    del _img_cache[k]
             _img_cache[url] = (data, ct, time.time())
         return True
     except:
         return False
+    finally:
+        evt.set()
+        with _img_downloading_lock:
+            _img_downloading.pop(url, None)
 
 def _prefetch_covers(results):
     """后台批量预下载封面到缓存"""
     urls = [r.get("cover") for r in results if r.get("cover") and not r["cover"].startswith("data:")]
-    # 排除已缓存的
     urls = [u for u in urls if u not in _img_cache]
     if not urls:
         return
@@ -562,6 +605,72 @@ def _prefetch_covers(results):
             done = sum(pool.map(_download_cover_to_cache, urls))
         print(f"[PREFETCH] {done}/{len(urls)} covers cached")
     threading.Thread(target=_do, daemon=True).start()
+
+# ─── API: Batch Image Prefetch (reader speed boost) ───
+@app.route("/api/img-prefetch", methods=["POST"])
+def api_img_prefetch():
+    """批量预取图片到缓存 — 立即返回, 后台并行下载"""
+    data = request.json or {}
+    urls = data.get("urls", [])
+    if not urls:
+        return jsonify({"status": "empty"})
+    # 过滤已缓存的
+    with _img_cache_lock:
+        urls = [u for u in urls if u not in _img_cache
+                or time.time() - _img_cache[u][2] > _IMG_CACHE_TTL]
+    if not urls:
+        return jsonify({"status": "all_cached"})
+    # ★ 关键: 先注册所有 Event, 让 proxy 请求能找到并等待
+    events = {}
+    with _img_downloading_lock:
+        for u in urls:
+            if u not in _img_downloading:
+                evt = threading.Event()
+                _img_downloading[u] = evt
+                events[u] = evt
+
+    def _bg_prefetch(url_list, evts):
+        def _dl_one(url):
+            """下载单张图到缓存, 完成后通知 Event"""
+            if not url or url.startswith('data:'):
+                return False
+            # 已缓存?
+            with _img_cache_lock:
+                if url in _img_cache:
+                    _, _, ts = _img_cache[url]
+                    if time.time() - ts < _IMG_CACHE_TTL:
+                        return True
+            try:
+                session = _find_session_for_url(url)
+                referer = url.rsplit('/', 1)[0] + '/'
+                resp = session.get(url, timeout=(3, 10),
+                                   headers={"Referer": referer})
+                resp.raise_for_status()
+                data = resp.content
+                ct = resp.headers.get("Content-Type", "image/jpeg")
+                with _img_cache_lock:
+                    if len(_img_cache) >= _IMG_CACHE_MAX:
+                        to_evict = _IMG_CACHE_MAX // 10
+                        oldest_keys = sorted(_img_cache, key=lambda k: _img_cache[k][2])[:to_evict]
+                        for k in oldest_keys:
+                            del _img_cache[k]
+                    _img_cache[url] = (data, ct, time.time())
+                return True
+            except:
+                return False
+            finally:
+                evt = evts.get(url)
+                if evt:
+                    evt.set()
+                with _img_downloading_lock:
+                    _img_downloading.pop(url, None)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=64) as pool:
+            done = sum(pool.map(_dl_one, url_list))
+        print(f"[READER PREFETCH] {done}/{len(url_list)} images cached")
+
+    threading.Thread(target=_bg_prefetch, args=(urls, events), daemon=True).start()
+    return jsonify({"status": "started", "count": len(urls)})
 
 # ─── API: Image Proxy ───
 @app.route("/api/img-proxy")
@@ -579,7 +688,18 @@ def api_img_proxy():
                 return Response(data, mimetype=ct or "image/jpeg",
                                 headers={"Cache-Control": "public, max-age=3600"})
 
-    # 缓存未命中 → 下载
+    # 如果 prefetch 正在下载这个 URL, 等它完成而不是重复下载
+    with _img_downloading_lock:
+        evt = _img_downloading.get(url)
+    if evt:
+        evt.wait(timeout=12)
+        with _img_cache_lock:
+            if url in _img_cache:
+                data, ct, _ = _img_cache[url]
+                return Response(data, mimetype=ct,
+                                headers={"Cache-Control": "public, max-age=3600"})
+
+    # 缓存未命中 → 自己下载
     if _download_cover_to_cache(url):
         with _img_cache_lock:
             data, ct, _ = _img_cache[url]
@@ -769,78 +889,102 @@ def api_download_zip():
     safe_title = re.sub(r'[\\/:*?"<>|]', '_', manga_title).strip()
 
     def generate():
-        """Generator: 逐章下载图片 → 写入内存ZIP → yield 增量字节"""
+        """Generator: 逐章下载图片 → 写入内存ZIP → yield 增量字节 (高速并行版)"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+
         buf = BytesIO()
         zf = zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED)
         written = 0  # 已yield的字节位置
 
-        for ch_idx, ch in enumerate(chapters):
-            ch_url = ch.get("url", "")
-            ch_title = ch.get("title", f"Chapter_{ch_idx+1}")
-            ch_num = extract_chapter_number(ch_title)
-            is_raw = "raw" in ch_title.lower()
-            safe_ch = format_chapter_dir(ch_num, is_raw)
+        def _flush():
+            nonlocal written
+            buf.seek(0, 2)
+            new_pos = buf.tell()
+            if new_pos > written:
+                buf.seek(written)
+                data = buf.read(new_pos - written)
+                written = new_pos
+                return data
+            return b''
 
-            # 获取图片URL列表
+        def _dl_img(img_url):
+            for attempt in range(3):
+                data = source.download_image(img_url, timeout=20)
+                if data:
+                    return data
+                time.sleep(0.2 * attempt)
+            return None
+
+        def _prefetch_images(ch_url):
             try:
-                images = source.get_chapter_images(ch_url)
+                return source.get_chapter_images(ch_url)
             except Exception:
-                images = []
+                return []
 
-            if not images:
-                continue
+        # 单个大线程池: 复用连接, 减少创建/销毁开销
+        with ThreadPoolExecutor(max_workers=128) as pool:
+            # 预取第一章的图片列表
+            next_images_future = None
+            if chapters:
+                next_images_future = pool.submit(
+                    _prefetch_images, chapters[0].get("url", ""))
 
-            # 并行下载当前章节所有图片
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            img_data = {}  # idx -> bytes
+            for ch_idx, ch in enumerate(chapters):
+                ch_url = ch.get("url", "")
+                ch_title = ch.get("title", f"Chapter_{ch_idx+1}")
+                ch_num = extract_chapter_number(ch_title)
+                is_raw = "raw" in ch_title.lower()
+                safe_ch = format_chapter_dir(ch_num, is_raw)
 
-            def _dl(idx_url):
-                idx, url = idx_url
-                for attempt in range(3):
-                    data = source.download_image(url, timeout=15)
-                    if data:
-                        return idx, data
-                    time.sleep(0.5 * (attempt + 1))
-                return idx, None
+                # 获取当前章节图片列表 (已预取)
+                images = next_images_future.result() if next_images_future else []
+                next_images_future = None
 
-            with ThreadPoolExecutor(max_workers=32) as pool:
-                futures = pool.map(_dl, enumerate(images))
-                for idx, raw in futures:
+                # 提前预取下一章的图片列表
+                if ch_idx + 1 < len(chapters):
+                    next_images_future = pool.submit(
+                        _prefetch_images,
+                        chapters[ch_idx + 1].get("url", ""))
+
+                if not images:
+                    continue
+
+                # 并行下载当前章节所有图片
+                futs = {pool.submit(_dl_img, url): i
+                        for i, url in enumerate(images)}
+                img_data = {}
+
+                for fut in as_completed(futs):
+                    idx = futs[fut]
+                    raw = fut.result()
                     if raw:
                         img_data[idx] = raw
 
-            # 逐张写入ZIP
-            for i in range(len(images)):
-                if i not in img_data:
-                    continue
-                # 猜测扩展名
-                raw = img_data[i]
-                ext = '.jpg'
-                if raw[:4] == b'\x89PNG':
-                    ext = '.png'
-                elif raw[:4] == b'RIFF':
-                    ext = '.webp'
-                elif raw[:3] == b'GIF':
-                    ext = '.gif'
-                fname = f"{safe_title}/{safe_ch}/{str(i+1).zfill(3)}{ext}"
-                zf.writestr(fname, raw)
-                del img_data[i]  # 立即释放内存
+                # 按序写入ZIP
+                for i in range(len(images)):
+                    if i not in img_data:
+                        continue
+                    raw = img_data[i]
+                    ext = '.jpg'
+                    if raw[:4] == b'\x89PNG':
+                        ext = '.png'
+                    elif raw[:4] == b'RIFF':
+                        ext = '.webp'
+                    elif raw[:3] == b'GIF':
+                        ext = '.gif'
+                    fname = f"{safe_title}/{safe_ch}/{str(i+1).zfill(3)}{ext}"
+                    zf.writestr(fname, raw)
+                    del img_data[i]  # 立即释放内存
 
-                # yield 新增的字节
-                buf.seek(0, 2)  # seek to end
-                new_pos = buf.tell()
-                if new_pos > written:
-                    buf.seek(written)
-                    yield buf.read(new_pos - written)
-                    written = new_pos
+                    chunk = _flush()
+                    if chunk:
+                        yield chunk
 
         # 关闭ZIP (写入 central directory)
         zf.close()
-        buf.seek(0, 2)
-        new_pos = buf.tell()
-        if new_pos > written:
-            buf.seek(written)
-            yield buf.read(new_pos - written)
+        chunk = _flush()
+        if chunk:
+            yield chunk
 
     # 记录下载日志
     ch_nums = [extract_chapter_number(c.get("title", "")) for c in chapters]
@@ -865,9 +1009,11 @@ def api_download_zip():
     # 更新收藏的下载记录 (供追更检测使用)
     if manga_url:
         for c in chapters:
-            ch_num = extract_chapter_number(c.get("title", ""))
+            ch_title = c.get("title", "")
+            ch_num = extract_chapter_number(ch_title)
             if ch_num:
-                favorites.update_download_history(manga_url, ch_num)
+                is_raw = "raw" in ch_title.lower()
+                favorites.update_download_history(manga_url, ch_num, is_raw=is_raw)
 
     safe_filename = re.sub(r'[\\/:*?"<>|]', '_', manga_title).strip() + '.zip'
     return Response(
@@ -923,7 +1069,7 @@ def api_batch_update():
     """一键追更: 检测新章节并下载"""
     data = request.json or {}
     urls = data.get("urls", [])  # 空=全部
-    prefer_raw = data.get("prefer_raw", True)
+    prefer_raw = data.get("prefer_raw", True)  # True/False/"auto"
 
     # 自动从下载日志回填缺失的 download_history
     favorites.backfill_from_download_log()
@@ -949,6 +1095,13 @@ def api_batch_update():
             last_num = float(last_ch)
         except (ValueError, TypeError):
             last_num = 0
+
+        # 自动模式: 根据每部漫画的历史版本决定
+        if prefer_raw == "auto":
+            item_version = hist.get("last_version", "raw")
+            item_prefer_raw = (item_version == "raw")
+        else:
+            item_prefer_raw = prefer_raw
 
         # 找到对应的源
         source = None
@@ -987,9 +1140,9 @@ def api_batch_update():
             title_lower = ch.get("title", "").lower()
             is_raw = "raw" in title_lower
 
-            if prefer_raw and not is_raw:
+            if item_prefer_raw and not is_raw:
                 continue
-            if not prefer_raw and is_raw:
+            if not item_prefer_raw and is_raw:
                 continue
 
             new_chs.append({
@@ -1128,84 +1281,107 @@ def api_start_update_zip():
         return jsonify({"error": "无下载项"}), 400
 
     def generate():
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         buf = BytesIO()
         zf = zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED)
         written = 0
 
-        for item in items:
-            manga_title = item.get("title", "Unknown")
-            src_name = item.get("source", "")
-            chapters = item.get("chapters", [])
-            if not chapters:
-                continue
+        def _flush():
+            nonlocal written
+            buf.seek(0, 2)
+            new_pos = buf.tell()
+            if new_pos > written:
+                buf.seek(written)
+                data = buf.read(new_pos - written)
+                written = new_pos
+                return data
+            return b''
 
-            source = sources[0]
-            for s in sources:
-                if s.name == src_name:
-                    source = s
-                    break
-
-            safe_manga = re.sub(r'[\\/:*?"<>|]', '_', manga_title).strip()
-
-            for ch_idx, ch in enumerate(chapters):
-                ch_url = ch.get("url", "")
-                ch_title = ch.get("title", f"Chapter_{ch_idx+1}")
-                ch_num = extract_chapter_number(ch_title)
-                is_raw = "raw" in ch_title.lower()
-                safe_ch = format_chapter_dir(ch_num, is_raw)
-
-                try:
-                    images = source.get_chapter_images(ch_url)
-                except Exception:
-                    images = []
-                if not images:
+        # 单个大线程池复用连接
+        with ThreadPoolExecutor(max_workers=128) as pool:
+            for item in items:
+                manga_title = item.get("title", "Unknown")
+                src_name = item.get("source", "")
+                chapters = item.get("chapters", [])
+                if not chapters:
                     continue
 
-                from concurrent.futures import ThreadPoolExecutor
-                img_data = {}
+                source = sources[0]
+                for s in sources:
+                    if s.name == src_name:
+                        source = s
+                        break
 
-                def _dl(idx_url):
-                    idx, url = idx_url
+                safe_manga = re.sub(r'[\\/:*?"<>|]', '_', manga_title).strip()
+
+                def _dl_img(img_url, src=source):
                     for attempt in range(3):
-                        d = source.download_image(url, timeout=15)
+                        d = src.download_image(img_url, timeout=20)
                         if d:
-                            return idx, d
-                        time.sleep(0.5 * (attempt + 1))
-                    return idx, None
+                            return d
+                        time.sleep(0.2 * attempt)
+                    return None
 
-                with ThreadPoolExecutor(max_workers=32) as pool:
-                    for idx, raw in pool.map(_dl, enumerate(images)):
+                def _prefetch(ch_url, src=source):
+                    try:
+                        return src.get_chapter_images(ch_url)
+                    except Exception:
+                        return []
+
+                # 预取第一章图片列表
+                next_images_future = pool.submit(
+                    _prefetch, chapters[0].get("url", "")) if chapters else None
+
+                for ch_idx, ch in enumerate(chapters):
+                    ch_title = ch.get("title", f"Chapter_{ch_idx+1}")
+                    ch_num = extract_chapter_number(ch_title)
+                    is_raw = "raw" in ch_title.lower()
+                    safe_ch = format_chapter_dir(ch_num, is_raw)
+
+                    images = next_images_future.result() if next_images_future else []
+                    next_images_future = None
+
+                    if ch_idx + 1 < len(chapters):
+                        next_images_future = pool.submit(
+                            _prefetch, chapters[ch_idx + 1].get("url", ""))
+
+                    if not images:
+                        continue
+
+                    futs = {pool.submit(_dl_img, url): i
+                            for i, url in enumerate(images)}
+                    img_data = {}
+
+                    for fut in as_completed(futs):
+                        idx = futs[fut]
+                        raw = fut.result()
                         if raw:
                             img_data[idx] = raw
 
-                for i in range(len(images)):
-                    if i not in img_data:
-                        continue
-                    raw = img_data[i]
-                    ext = '.jpg'
-                    if raw[:4] == b'\x89PNG':
-                        ext = '.png'
-                    elif raw[:4] == b'RIFF':
-                        ext = '.webp'
-                    elif raw[:3] == b'GIF':
-                        ext = '.gif'
-                    fname = f"{safe_manga}/{safe_ch}/{str(i+1).zfill(3)}{ext}"
-                    zf.writestr(fname, raw)
-                    del img_data[i]
+                    for i in range(len(images)):
+                        if i not in img_data:
+                            continue
+                        raw = img_data[i]
+                        ext = '.jpg'
+                        if raw[:4] == b'\x89PNG':
+                            ext = '.png'
+                        elif raw[:4] == b'RIFF':
+                            ext = '.webp'
+                        elif raw[:3] == b'GIF':
+                            ext = '.gif'
+                        fname = f"{safe_manga}/{safe_ch}/{str(i+1).zfill(3)}{ext}"
+                        zf.writestr(fname, raw)
+                        del img_data[i]
 
-                    buf.seek(0, 2)
-                    new_pos = buf.tell()
-                    if new_pos > written:
-                        buf.seek(written)
-                        yield buf.read(new_pos - written)
-                        written = new_pos
+                        chunk = _flush()
+                        if chunk:
+                            yield chunk
 
         zf.close()
-        buf.seek(0, 2)
-        new_pos = buf.tell()
-        if new_pos > written:
-            buf.seek(written)
-            yield buf.read(new_pos - written)
+        chunk = _flush()
+        if chunk:
+            yield chunk
 
     # 记录追更日志
     chapter_details = []
@@ -1248,9 +1424,11 @@ def api_start_update_zip():
         manga_url = item.get("url", "")
         if manga_url:
             for c in item.get("chapters", []):
-                ch_num = extract_chapter_number(c.get("title", ""))
+                ch_title = c.get("title", "")
+                ch_num = extract_chapter_number(ch_title)
                 if ch_num:
-                    favorites.update_download_history(manga_url, ch_num)
+                    is_raw = "raw" in ch_title.lower()
+                    favorites.update_download_history(manga_url, ch_num, is_raw=is_raw)
 
     from datetime import datetime
     date_str = datetime.now().strftime('%Y-%m-%d')
