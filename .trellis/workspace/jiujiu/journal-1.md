@@ -138,3 +138,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 完善 backend 规范
+
+**Date**: 2026-06-05
+**Task**: 完善 backend 规范
+**Branch**: `trellis-setup`
+
+### Summary
+
+补全 backend 的 database、error handling、logging、quality 四份规范文档，并与当前 Flask/Web/JSON 持久化现实保持一致。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6425717` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
