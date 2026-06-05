@@ -119,11 +119,13 @@ class ManhwaHubSource(MangaSource):
         return results[:24]
 
     def get_popular(self, page: int = 1) -> list[dict]:
-        if page > 1: return []
+        if page > 1:
+            return []
         return self._parse_homepage()
 
     def get_latest(self, page: int = 1) -> list[dict]:
-        if page > 1: return []
+        if page > 1:
+            return []
         return self._parse_homepage()
 
     def get_manga_info(self, manga_url: str) -> dict:

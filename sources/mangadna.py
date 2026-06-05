@@ -110,11 +110,13 @@ class MangaDNASource(MangaSource):
         return results[:24]
 
     def get_popular(self, page: int = 1) -> list[dict]:
-        if page > 1: return []
+        if page > 1:
+            return []
         return self._parse_homepage_section("popular")
 
     def get_latest(self, page: int = 1) -> list[dict]:
-        if page > 1: return []
+        if page > 1:
+            return []
         return self._parse_homepage_section("latest")
 
     def get_manga_info(self, manga_url: str) -> dict:

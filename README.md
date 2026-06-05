@@ -20,9 +20,7 @@ MangaDL 是一个以 **Web 使用体验** 为主的漫画工具：
 - 收藏、分组、追更与下载历史
 - Docker 部署与本地 JSON 数据持久化
 
-当前仓库的 Web 端由 Flask 提供服务，入口文件 `server.py` 已经是**薄入口**，实际实现位于 `web/` 目录。仓库里也保留了复用同一套核心模块的 `app.py`（PyQt5 GUI），但本 README 重点面向 **终端使用者 / Docker 部署者**。
-
-> `requirements.txt` 仅覆盖当前 Web 运行所需依赖；若你要使用 `app.py` 桌面 GUI，需要额外准备 PyQt5 环境。
+当前仓库已收敛为 **Web-only** 项目：Flask 入口文件 `server.py` 是**薄入口**，实际实现位于 `web/` 目录。本 README 面向 **终端使用者 / Docker 部署者**。
 
 ## ✨ 主要功能
 
@@ -131,7 +129,7 @@ docker compose up -d
 | `proxy_mode` | `none` | `none` / `http` / `socks5` |
 | `proxy_host` | `127.0.0.1` | 代理地址 |
 | `proxy_port` | `7890` | 代理端口 |
-| `theme` | `dark` | Web / GUI 共用主题偏好 |
+| `theme` | `dark` | Web 主题偏好 |
 
 ### 数据文件
 
@@ -150,7 +148,7 @@ docker compose up -d
 
 ## 📁 项目结构
 
-当前仓库已经不是“单个 `server.py` 大一统实现”，而是 **薄入口 + `web/` 模块化 Flask 实现 + 共享核心模块** 的结构：
+当前仓库已经不是“单个 `server.py` 大一统实现”，而是 **Web-only 薄入口 + `web/` 模块化 Flask 实现 + 共享核心模块** 的结构：
 
 ```text
 .
@@ -173,12 +171,8 @@ docker compose up -d
 ├── download_manager.py      # 下载核心
 ├── config.py                # 本地配置 JSON 持久化
 ├── favorites.py             # 收藏 / 历史 JSON 持久化
-├── scripts/                 # 辅助构建脚本
-├── packaging/               # PyInstaller 打包配置
 ├── static/                  # Web 前端脚本与样式
 ├── templates/               # Flask 模板
-├── app.py                   # PyQt5 GUI 入口（复用同一核心模块）
-├── workers.py               # GUI worker
 ├── Dockerfile
 ├── pyproject.toml           # Ruff lint/format 配置
 ├── requirements.txt

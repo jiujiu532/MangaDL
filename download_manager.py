@@ -1,5 +1,5 @@
 """
-下载任务管理器 (Flask 版, 不依赖 PyQt5)
+下载任务管理器 (Web 版)
 逐章任务队列，支持暂停/恢复/取消，速度统计，失败重试
 
 创新架构:
@@ -511,7 +511,7 @@ class DownloadManager:
                                 fb_success += 1
                                 self._global_bytes += len(data)
                             return True
-                    except:
+                    except Exception:
                         pass
                     return False
 
@@ -527,6 +527,6 @@ class DownloadManager:
                     self.task_log.emit(
                         f"[FAILOVER OK] {task.chapter_title}: {fb_success}/{len(alt_images)} via {alt.name}")
                     return True
-            except:
+            except Exception:
                 continue
         return False
