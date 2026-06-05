@@ -26,3 +26,14 @@ download_log.json
 # OS
 Thumbs.db
 .DS_Store
+
+# Local launcher helper
+/启动漫画下载器.bat
+
+# Keep committed packaging spec
+!packaging/MangaDL.spec
+
+# Local workflow / cache artifacts
+/.opencode/
+/.trellis/
+/.ruff_cache/

@@ -4,7 +4,6 @@ mangadna.com 适配器
 CDN: img001.mangadna.com
 搜索: /search?q=
 """
-import re
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from .base import MangaSource

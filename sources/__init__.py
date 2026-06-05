@@ -5,6 +5,7 @@ from .base import MangaSource
 from .madara import MadaraSource
 from .manhwahub import ManhwaHubSource
 from .mangadna import MangaDNASource
+from .manga18 import Manga18Source
 from .xtoon import XToonSource
 
 
@@ -18,5 +19,5 @@ def get_all_sources() -> list[MangaSource]:
         ManhwaHubSource(),
         MangaDNASource(),
         XToonSource(),
+        Manga18Source(),
     ]
-

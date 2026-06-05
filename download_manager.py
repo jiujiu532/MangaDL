@@ -13,7 +13,7 @@ import time
 import threading
 import difflib
 from enum import Enum
-from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import deque
 
 

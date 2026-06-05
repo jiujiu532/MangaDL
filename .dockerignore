@@ -27,6 +27,7 @@ screenshot.png
 Thumbs.db
 .DS_Store
 
-# Build scripts
-build_linux.sh
+# Packaging / local launcher helpers
+scripts/
+packaging/
 启动漫画下载器.bat

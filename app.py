@@ -2,10 +2,12 @@
 多源漫画下载器 v2 — 全功能 PyQt5 GUI
 19 项功能: 多源搜索、Raw过滤、灵活选择、任务管理器、收藏夹、速度显示等
 """
-import os, sys, re, json, time
+import os
+import sys
+import re
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QUrl, QTimer, QSize, pyqtSignal
-from PyQt5.QtGui import QPixmap, QImage, QFont, QIcon, QDesktopServices, QKeySequence
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QPixmap, QDesktopServices, QKeySequence
 from PyQt5.QtWidgets import QShortcut
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
