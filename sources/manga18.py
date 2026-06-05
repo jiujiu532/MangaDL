@@ -4,7 +4,6 @@ manga18.club 适配器
 CDN: s1.manga18.club
 URL: /manhwa/{slug}/chapter-{N}
 """
-import re
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from .base import MangaSource

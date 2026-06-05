@@ -2,9 +2,14 @@
 漫画下载器 Web Server — Flask 后端
 复用现有 sources/config/favorites/download_manager 模块
 """
-import os, sys, re, json, time, threading, difflib, hashlib, zipfile, struct
-from functools import lru_cache
-from flask import Flask, render_template, jsonify, request, Response, send_file, stream_with_context
+import os
+import sys
+import re
+import time
+import threading
+import difflib
+import zipfile
+from flask import Flask, render_template, jsonify, request, Response, stream_with_context
 from io import BytesIO
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -890,7 +895,7 @@ def api_download_zip():
 
     def generate():
         """Generator: 逐章下载图片 → 写入内存ZIP → yield 增量字节 (高速并行版)"""
-        from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         buf = BytesIO()
         zf = zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED)
@@ -1439,7 +1444,7 @@ def api_start_update_zip():
         stream_with_context(generate()),
         mimetype='application/zip',
         headers={
-            'Content-Disposition': f'attachment; filename*=UTF-8\'\''
+            'Content-Disposition': 'attachment; filename*=UTF-8\'\''
                                    + __import__("urllib.parse", fromlist=["quote"]).quote(safe_filename),
             'X-Accel-Buffering': 'no',
             'Cache-Control': 'no-cache',
