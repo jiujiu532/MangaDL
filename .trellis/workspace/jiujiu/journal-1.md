@@ -38,3 +38,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 接入 Ruff 配置
+
+**Date**: 2026-06-05
+**Task**: 接入 Ruff 配置
+**Branch**: `trellis-setup`
+
+### Summary
+
+为项目新增 Ruff lint/format 配置与开发依赖清单，完成首次 ruff check 并记录当前问题数量。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e559652` | (see git log) |
+| `3f89639` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
