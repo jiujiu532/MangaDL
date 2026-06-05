@@ -26,3 +26,8 @@ download_log.json
 # OS
 Thumbs.db
 .DS_Store
+
+# Trellis / OpenCode workflow artifacts
+/.opencode/
+/.trellis/tasks/
+/.trellis/workspace/
