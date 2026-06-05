@@ -105,3 +105,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: 拆分 server.py
+
+**Date**: 2026-06-05
+**Task**: 拆分 server.py
+**Branch**: `trellis-setup`
+
+### Summary
+
+将 server.py 重构为薄入口，并拆分到 web/ 模块结构，保留关键 Flask 路由与兼容导出。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `96d3cc8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
